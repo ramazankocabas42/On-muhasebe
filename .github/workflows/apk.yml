@@ -59,6 +59,29 @@ jobs:
           if [ -n "$KS" ]; then echo "$KS" | base64 -d > ~/.android/debug.keystore
           elif [ -f imza/debug.keystore ]; then cp imza/debug.keystore ~/.android/debug.keystore; fi
 
+      - name: Maven aynası (GitHub indirme hatalarına karşı)
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cat > ~/.gradle/init.d/ayna.gradle <<'G'
+          def AYNA = 'https://maven-central.storage-download.googleapis.com/maven2/'
+          def duzelt = { repos ->
+            repos.withType(MavenArtifactRepository).configureEach { r ->
+              def u = r.url.toString()
+              if (u.contains('repo.maven.apache.org') || u.contains('repo1.maven.org')) { r.url = AYNA }
+            }
+          }
+          beforeSettings { s ->
+            duzelt(s.pluginManagement.repositories)
+            duzelt(s.buildscript.repositories)
+            duzelt(s.dependencyResolutionManagement.repositories)
+          }
+          allprojects { p ->
+            duzelt(p.buildscript.repositories)
+            duzelt(p.repositories)
+          }
+          G
+          cat ~/.gradle/init.d/ayna.gradle
+
       - run: flutter pub get
       - name: APK derle (indirme hatasına karşı 3 deneme)
         run: |
