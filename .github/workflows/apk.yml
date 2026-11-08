@@ -78,6 +78,12 @@ jobs:
           allprojects { p ->
             duzelt(p.buildscript.repositories)
             duzelt(p.repositories)
+            p.afterEvaluate {
+              def a = p.extensions.findByName('android')
+              if (a != null && p.name != 'app') {
+                try { if ((a.compileSdk ?: 0) < 36) a.compileSdk = 36 } catch (e) { println "compileSdk ayarlanamadı: ${p.name}" }
+              }
+            }
           }
           G
           cat ~/.gradle/init.d/ayna.gradle

@@ -15,7 +15,7 @@ dependencies:
   intl: any
   excel: 4.0.6
   archive: any
-  file_picker: ^8.1.7
+  file_picker: ^10.0.0
   share_plus: ^10.1.4
   webview_flutter: ^4.10.0
 
