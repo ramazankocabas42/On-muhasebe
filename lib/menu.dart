@@ -15,6 +15,7 @@ import 'senkron.dart';
 import 'sirket.dart';
 import 'uretim.dart';
 import 'urun.dart';
+import 'wa_bildirim.dart';
 import 'whatsapp.dart';
 
 class MI {
@@ -215,7 +216,8 @@ final moduller = <Modul>[
     MI('DİPOS IV', Icons.architecture, () => _portal('DİPOS IV')),
   ]),
   Modul('WhatsApp', Icons.chat, const Color(0xFF25D366), [
-    MI('Sohbetten Veri Al', Icons.chat, () => const WhatsappAktar()),
+    MI('Otomatik Takip ve Eşitle', Icons.sync, () => const WaOtomatik()),
+    MI('Sohbetten Veri Al (dışa aktarma)', Icons.chat, () => const WhatsappAktar()),
     MI('Notlar', Icons.sticky_note_2, () => const NotListesi()),
   ]),
 ];
@@ -248,6 +250,7 @@ class AnaMenu extends StatefulWidget {
 class _AnaMenuState extends State<AnaMenu> {
   String firma = '';
   Map<String, Object?> ozet = {};
+  int waBekleyen = 0;
 
   @override
   void initState() {
@@ -268,10 +271,12 @@ class _AnaMenuState extends State<AnaMenu> {
     final k = await DB.tek("SELECT IFNULL(SUM(giris-cikis),0) b FROM finans_hareket f JOIN hesap h ON h.id=f.hesap_id WHERE h.tip='kasa'");
     final b = await DB.tek("SELECT IFNULL(SUM(giris-cikis),0) b FROM finans_hareket f JOIN hesap h ON h.id=f.hesap_id WHERE h.tip='banka'");
     final c = await DB.tek('SELECT SUM(CASE WHEN bk>0 THEN bk ELSE 0 END) a, SUM(CASE WHEN bk<0 THEN -bk ELSE 0 END) b FROM (SELECT SUM(borc-alacak) bk FROM cari_hareket GROUP BY cari_id)');
+    final wa = await WaKanal.bekleyenSayisi();
     final cek = await DB.tek("SELECT COUNT(*) n FROM cek_senet WHERE durum='Portföyde' AND vade<=?", [tarihS(DateTime.now().add(const Duration(days: 7)))]);
     if (!mounted) return;
     setState(() {
       firma = '${s?['unvan'] ?? ''}';
+      waBekleyen = wa;
       ozet = {'Kasa': sy(k?['b']), 'Banka': sy(b?['b']), 'Alacaklar': sy(c?['a']), 'Borçlar': sy(c?['b']), 'cek': cek?['n'] ?? 0};
     });
   }
@@ -352,6 +357,19 @@ class _AnaMenuState extends State<AnaMenu> {
                 leading: const Icon(Icons.alarm),
                 title: Text('${ozet['cek']} çek/senedin vadesi 7 gün içinde'),
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => cekRaporu('vade'))),
+              ),
+            ),
+          if (waBekleyen > 0)
+            Card(
+              color: Colors.green[50],
+              child: ListTile(
+                leading: const Icon(Icons.chat, color: Color(0xFF25D366)),
+                title: Text('WhatsApp\'tan $waBekleyen tutarlı mesaj işlenmeyi bekliyor'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () async {
+                  await Navigator.push(context, MaterialPageRoute(builder: (_) => const WaOtomatik()));
+                  yukle();
+                },
               ),
             ),
           const SizedBox(height: 8),

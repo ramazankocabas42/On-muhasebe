@@ -11,6 +11,7 @@ import 'servis.dart';
 class WaMesaj {
   final String tarih, saat, kisi;
   String metin;
+  String sohbet = '';
   double? tutar;
   bool secili = false, aktarildi = false;
   WaMesaj(this.tarih, this.saat, this.kisi, this.metin);
@@ -56,7 +57,9 @@ List<WaMesaj> sohbetCoz(String metin) {
 }
 
 class WhatsappAktar extends StatefulWidget {
-  const WhatsappAktar({super.key});
+  final List<WaMesaj>? hazir;
+  final String? baslik;
+  const WhatsappAktar({super.key, this.hazir, this.baslik});
   @override
   State<WhatsappAktar> createState() => _WhatsappAktarState();
 }
@@ -66,6 +69,24 @@ class _WhatsappAktarState extends State<WhatsappAktar> {
   String dosya = '';
   bool sadeceTutar = true;
   String ara = '';
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.hazir != null) yerlestir(widget.hazir!, widget.baslik ?? 'WhatsApp');
+  }
+
+  Future<void> yerlestir(List<WaMesaj> l, String ad) async {
+    final d = await DB.db;
+    for (final m in l) {
+      final x = await d.query('aktarim_hash', where: 'h=?', whereArgs: [m.anahtar]);
+      m.aktarildi = x.isNotEmpty;
+    }
+    if (mounted) setState(() {
+      mesajlar = l;
+      dosya = ad;
+    });
+  }
 
   Future<void> sec() async {
     final r = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['txt', 'zip'], withData: true);
@@ -82,15 +103,7 @@ class _WhatsappAktarState extends State<WhatsappAktar> {
       b = txt.first.content as List<int>;
     }
     final l = sohbetCoz(metinCoz(b));
-    final d = await DB.db;
-    for (final m in l) {
-      final x = await d.query('aktarim_hash', where: 'h=?', whereArgs: [m.anahtar]);
-      m.aktarildi = x.isNotEmpty;
-    }
-    setState(() {
-      mesajlar = l;
-      dosya = f.name;
-    });
+    await yerlestir(l, f.name);
     if (l.isEmpty && mounted) mesaj(context, 'Mesaj bulunamadı. Dosyanın WhatsApp "Sohbeti dışa aktar" çıktısı olduğundan emin olun.');
   }
 
@@ -181,7 +194,7 @@ class _WhatsappAktarState extends State<WhatsappAktar> {
     final g = gorunen;
     final secSayi = mesajlar.where((m) => m.secili).length;
     return Scaffold(
-      appBar: AppBar(title: const Text('WhatsApp Verileri'), actions: [
+      appBar: AppBar(title: Text(widget.baslik ?? 'WhatsApp Verileri'), actions: [
         IconButton(icon: const Icon(Icons.folder_open), tooltip: 'Sohbet dosyası seç', onPressed: sec),
       ]),
       floatingActionButton: secSayi == 0 ? null : FloatingActionButton.extended(onPressed: aktar, icon: const Icon(Icons.input), label: Text('$secSayi mesajı aktar')),
@@ -224,7 +237,7 @@ class _WhatsappAktarState extends State<WhatsappAktar> {
                       value: m.secili,
                       onChanged: m.aktarildi ? null : (v) => setState(() => m.secili = v == true),
                       title: Text(m.metin, maxLines: 3, overflow: TextOverflow.ellipsis),
-                      subtitle: Text('${m.kisi} • ${gTarih(m.tarih)} ${m.saat}${m.aktarildi ? ' • aktarıldı' : ''}'),
+                      subtitle: Text('${m.kisi}${m.sohbet.isNotEmpty && m.sohbet != m.kisi ? ' (${m.sohbet})' : ''} • ${gTarih(m.tarih)} ${m.saat}${m.aktarildi ? ' • aktarıldı' : ''}'),
                       secondary: m.tutar == null ? null : Chip(label: Text(para(m.tutar))),
                     );
                   },

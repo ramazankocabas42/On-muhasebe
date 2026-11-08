@@ -32,6 +32,13 @@ jobs:
           M=android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.INTERNET' $M || sed -i '0,/<application/s##<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' $M
           sed -i 's#android:label="on_muhasebe"#android:label="Ön Muhasebe"#' $M
+          # WhatsApp bildirim dinleyicisi (yerel Android kodu)
+          K=android/app/src/main/kotlin/com/kones/on_muhasebe
+          mkdir -p $K
+          find android/app/src/main -name 'MainActivity.*' -delete
+          cp android_ek/*.kt $K/
+          grep -q 'WaDinleyici' $M || sed -i 's#</application>#    <service android:name=".WaDinleyici" android:label="Ön Muhasebe WhatsApp" android:exported="true" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">\n            <intent-filter><action android:name="android.service.notification.NotificationListenerService"/></intent-filter>\n        </service>\n    </application>#' $M
+          cat $M
           # Firestore için en az Android 6 (API 23)
           for G in android/app/build.gradle.kts android/app/build.gradle; do
             [ -f $G ] && sed -i -E 's#minSdk( =|Version)? *=? *flutter\.minSdkVersion#minSdk = maxOf(flutter.minSdkVersion, 23)#' $G && grep -n minSdk $G || true
