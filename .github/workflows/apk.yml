@@ -33,7 +33,22 @@ jobs:
           grep -q 'android.permission.INTERNET' $M || sed -i '0,/<application/s##<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' $M
           sed -i 's#android:label="on_muhasebe"#android:label="Ön Muhasebe"#' $M
           W=android/gradle/wrapper/gradle-wrapper.properties
-          sed -i -E 's#distributionUrl=.*/(gradle-[0-9.]+)-all\.zip#distributionUrl=https\\://services.gradle.org/distributions/\1-bin.zip#' $W
+          V=$(grep -oE 'gradle-[0-9.]+' $W | head -1)
+          echo "Gerekli: $V"
+          mkdir -p $HOME/gradle-dl
+          Z=$HOME/gradle-dl/$V-bin.zip
+          for U in "https://services.gradle.org/distributions/$V-bin.zip" \
+                   "https://mirrors.cloud.tencent.com/gradle/$V-bin.zip" \
+                   "https://mirrors.huaweicloud.com/gradle/$V-bin.zip" \
+                   "https://downloads.gradle.org/distributions/$V-bin.zip"; do
+            echo "Deneniyor: $U"
+            if curl -fL --retry 3 --retry-delay 5 -o "$Z" "$U" && unzip -tq "$Z" >/dev/null; then
+              echo "İndirildi: $U"; break
+            fi
+            rm -f "$Z"
+          done
+          test -f "$Z"
+          sed -i -E "s#^distributionUrl=.*#distributionUrl=file\\:$Z#" $W
           cat $W
 
       - name: Sabit imza (güncellemeler üst üste kurulabilsin)
