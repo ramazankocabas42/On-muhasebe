@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -180,10 +181,121 @@ class PortalWeb extends StatefulWidget {
   State<PortalWeb> createState() => _PortalWebState();
 }
 
+class _Bulgu {
+  final List<List<String>> satirlar;
+  final Hedef? hedef;
+  final int veri;
+  _Bulgu(this.satirlar, this.hedef, this.veri);
+}
+
 class _PortalWebState extends State<PortalWeb> {
   late final WebViewController c;
   double ilerleme = 0;
   Map<String, dynamic>? oto;
+  Timer? _tarayici;
+  bool _taraniyor = false;
+  final _gorulen = <String>{};
+  List<_Bulgu> bulgular = [];
+
+  @override
+  void dispose() {
+    _tarayici?.cancel();
+    super.dispose();
+  }
+
+  /// Sayfadaki tabloları düzenli aralıklarla tarar, uygulamadaki bölümlerle eşleşenleri sorar.
+  Future<void> tara() async {
+    if (_taraniyor || !mounted) return;
+    _taraniyor = true;
+    try {
+      final t = await tablolar();
+      final url = await c.currentUrl() ?? '';
+      final yeni = <_Bulgu>[];
+      for (final rows in t) {
+        final b = baslikSatiriBul(rows);
+        final veri = rows.skip(b + 1).where((r) => r.any((x) => x.trim().isNotEmpty)).length;
+        if (veri < 1) continue;
+        final imza = '$url|${rows[b].join('|')}|${rows.length}|${rows.last.join('|')}';
+        if (_gorulen.contains(imza)) continue;
+        final h = enIyiHedef(rows);
+        if (h == null && veri < 3) continue;
+        _gorulen.add(imza);
+        yeni.add(_Bulgu(rows, h, veri));
+      }
+      if (yeni.isNotEmpty && mounted) setState(() => bulgular = [...bulgular, ...yeni]);
+    } catch (_) {
+    } finally {
+      _taraniyor = false;
+    }
+  }
+
+  bool _otoUyar(_Bulgu b) {
+    if (oto == null) return false;
+    final istenen = Map<String, String>.from(oto!['esle'] as Map).values.map(normal).toSet();
+    if (istenen.isEmpty) return false;
+    final bas = b.satirlar[baslikSatiriBul(b.satirlar)].map(normal).toSet();
+    return istenen.where(bas.contains).length >= (istenen.length / 2).ceil();
+  }
+
+  Future<void> bulguAktar(_Bulgu b, {bool hizli = false}) async {
+    setState(() => bulgular.remove(b));
+    if (hizli) {
+      final s = await otomatikAktar([b.satirlar], oto!, '${widget.portal['ad']}');
+      if (mounted) showDialog(context: context, builder: (_) => AlertDialog(title: const Text('Aktarım'), content: Text(s)));
+      return;
+    }
+    final ok = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => EslestirmeEkrani(
+                satirlar: b.satirlar, kaynak: '${widget.portal['ad']}', portalId: widget.portal['id'] as int, varsayilanHedef: b.hedef?.kod ?? 'serbest')));
+    if (ok == true) {
+      final p = await DB.tek('SELECT otomatik FROM portal WHERE id=?', [widget.portal['id']]);
+      final o = p?['otomatik'] as String?;
+      if (mounted) setState(() => oto = o == null ? null : jsonDecode(o) as Map<String, dynamic>);
+    }
+  }
+
+  Widget? bulguPaneli() {
+    if (bulgular.isEmpty) return null;
+    final b = bulgular.first;
+    final bas = b.satirlar[baslikSatiriBul(b.satirlar)].where((x) => x.trim().isNotEmpty).take(5).join(' • ');
+    final hizli = _otoUyar(b);
+    return Material(
+      elevation: 8,
+      color: Theme.of(context).colorScheme.primaryContainer,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Icon(Icons.auto_awesome, size: 20),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                    b.hedef != null ? '${b.veri} satır "${b.hedef!.ad}" verisi bulundu' : '${b.veri} satırlık tablo bulundu',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              if (bulgular.length > 1) Text('1/${bulgular.length}', style: const TextStyle(fontSize: 12)),
+            ]),
+            Text(bas, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12)),
+            const SizedBox(height: 4),
+            Text(b.hedef != null ? 'Uygulamaya aktarılsın mı?' : 'Olduğu gibi saklansın mı ya da bir bölüme aktarılsın mı?', style: const TextStyle(fontSize: 13)),
+            Wrap(spacing: 8, children: [
+              if (hizli)
+                FilledButton.icon(onPressed: () => bulguAktar(b, hizli: true), icon: const Icon(Icons.bolt), label: const Text('Hızlı aktar')),
+              if (hizli)
+                OutlinedButton(onPressed: () => bulguAktar(b), child: const Text('Kontrol edip aktar'))
+              else
+                FilledButton(onPressed: () => bulguAktar(b), child: const Text('Kontrol edip aktar')),
+              TextButton(onPressed: () => setState(() => bulgular.remove(b)), child: const Text('Yoksay')),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -196,8 +308,14 @@ class _PortalWebState extends State<PortalWeb> {
         onProgress: (p) {
           if (mounted) setState(() => ilerleme = p / 100);
         },
+        onPageStarted: (_) {
+          if (mounted) setState(() => bulgular = []);
+        },
+        onPageFinished: (_) => Future.delayed(const Duration(milliseconds: 1500), tara),
       ))
       ..loadRequest(Uri.parse('${widget.portal['url']}'));
+    // Sayfa yenilenmeden içerik değişen siteler (sorgu sonuçları) için düzenli tarama
+    _tarayici = Timer.periodic(const Duration(seconds: 4), (_) => tara());
   }
 
   Future<List<List<List<String>>>> tablolar() async {
@@ -307,6 +425,9 @@ class _PortalWebState extends State<PortalWeb> {
           ],
           bottom: ilerleme < 1 ? PreferredSize(preferredSize: const Size.fromHeight(3), child: LinearProgressIndicator(value: ilerleme)) : null,
         ),
-        body: WebViewWidget(controller: c),
+        body: Column(children: [
+          Expanded(child: WebViewWidget(controller: c)),
+          ...[bulguPaneli()].whereType<Widget>(),
+        ]),
       );
 }

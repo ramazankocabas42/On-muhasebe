@@ -767,3 +767,26 @@ class _NotListesiState extends State<NotListesi> {
     );
   }
 }
+
+/// Bir tablonun uygulamadaki hangi bölüme ait olduğunu sütun başlıklarından tahmin eder.
+/// Eşleşme yoksa null döner.
+Hedef? enIyiHedef(List<List<String>> rows) {
+  if (rows.length < 2) return null;
+  final b = baslikSatiriBul(rows);
+  final basliklar = rows[b];
+  Hedef? en;
+  var enPuan = 0.0;
+  for (final h in hedefler) {
+    if (h.alanlar.isEmpty || h.kod == 'not') continue;
+    final e = otomatikEsle(h, basliklar);
+    if (h.alanlar.any((a) => a.zorunlu && !e.containsKey(a.kod))) continue;
+    if (e.length < 2) continue;
+    // Eşleşen alan sayısı + alan kapsama oranı
+    final puan = e.length + e.length / h.alanlar.length;
+    if (puan > enPuan) {
+      enPuan = puan;
+      en = h;
+    }
+  }
+  return en;
+}
