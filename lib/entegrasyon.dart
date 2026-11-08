@@ -130,7 +130,7 @@ class _PortalFormState extends State<PortalForm> {
                 label: const Text('Kayıtlı otomatik aktarım eşlemesini sil'),
                 onPressed: () async {
                   final d = await DB.db;
-                  await d.update('portal', {'otomatik': null}, where: 'id=?', whereArgs: [widget.p!['id']]);
+                  await DB.upd(d, 'portal', {'otomatik': null}, where: 'id=?', whereArgs: [widget.p!['id']]);
                   if (context.mounted) mesaj(context, 'Eşleme silindi');
                 }),
         ]),

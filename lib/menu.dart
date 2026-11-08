@@ -6,9 +6,12 @@ import 'cari.dart';
 import 'cek.dart';
 import 'db.dart';
 import 'entegrasyon.dart';
+import 'giris.dart';
+import 'guncelleme.dart';
 import 'hizli.dart';
 import 'ortak.dart';
 import 'raporlar.dart';
+import 'senkron.dart';
 import 'sirket.dart';
 import 'uretim.dart';
 import 'urun.dart';
@@ -250,6 +253,14 @@ class _AnaMenuState extends State<AnaMenu> {
   void initState() {
     super.initState();
     yukle();
+    Senkron.degisti.addListener(yukle);
+    WidgetsBinding.instance.addPostFrameCallback((_) => Guncelleme.sor(context));
+  }
+
+  @override
+  void dispose() {
+    Senkron.degisti.removeListener(yukle);
+    super.dispose();
   }
 
   Future<void> yukle() async {
@@ -310,6 +321,16 @@ class _AnaMenuState extends State<AnaMenu> {
           Text(firma, style: const TextStyle(fontSize: 12)),
         ]),
         actions: [
+          ValueListenableBuilder<String>(
+            valueListenable: Senkron.durum,
+            builder: (_, d, __) => IconButton(
+              tooltip: 'Eşitleme',
+              icon: Icon(
+                  d == 'bagli' ? Icons.cloud_done : d == 'hata' ? Icons.cloud_off : d == 'gonderiyor' ? Icons.cloud_upload : Icons.cloud_queue,
+                  color: d == 'hata' ? Colors.red : null),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SenkronEkrani())),
+            ),
+          ),
           IconButton(
               icon: const Icon(Icons.business),
               tooltip: 'Şirket Bilgisi',

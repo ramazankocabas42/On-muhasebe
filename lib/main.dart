@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'menu.dart';
+import 'giris.dart';
+import 'senkron.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Senkron.firebaseBaslat();
   runApp(const OnMuhasebeApp());
 }
 
@@ -19,6 +21,6 @@ class OnMuhasebeApp extends StatelessWidget {
           colorSchemeSeed: const Color(0xFF00897B),
           inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder(), isDense: true),
         ),
-        home: const AnaMenu(),
+        home: const Kapi(),
       );
 }

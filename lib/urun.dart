@@ -255,9 +255,16 @@ class _HizliFiyatState extends State<HizliFiyat> {
     final y = sy(yuzde.text);
     if (y == 0) return;
     final carpan = 1 + y / 100;
-    final ifade = yuvarla ? 'ROUND($alan*$carpan, 0)' : 'ROUND($alan*$carpan, 2)';
     final d = await DB.db;
-    final n = await d.rawUpdate('UPDATE urun SET $alan=$ifade ${grup == null ? '' : 'WHERE grup=?'}', grup == null ? [] : [grup]);
+    final liste = await DB.q('SELECT id, $alan v FROM urun ${grup == null ? '' : 'WHERE grup=?'}', grup == null ? [] : [grup]);
+    var n = 0;
+    await d.transaction((tx) async {
+      for (final u in liste) {
+        final yeni = sy(u['v']) * carpan;
+        await DB.upd(tx, 'urun', {alan: yuvarla ? yeni.roundToDouble() : (yeni * 100).roundToDouble() / 100}, where: 'id=?', whereArgs: [u['id']]);
+        n++;
+      }
+    });
     if (mounted) {
       mesaj(context, '$n ürünün fiyatı güncellendi');
       Navigator.pop(context);

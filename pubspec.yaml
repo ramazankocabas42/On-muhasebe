@@ -18,6 +18,11 @@ dependencies:
   file_picker: ^10.0.0
   share_plus: ^10.1.4
   webview_flutter: ^4.10.0
+  firebase_core: any
+  firebase_auth: any
+  cloud_firestore: any
+  package_info_plus: any
+  url_launcher: any
 
 flutter:
   uses-material-design: true

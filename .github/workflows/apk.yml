@@ -32,6 +32,10 @@ jobs:
           M=android/app/src/main/AndroidManifest.xml
           grep -q 'android.permission.INTERNET' $M || sed -i '0,/<application/s##<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' $M
           sed -i 's#android:label="on_muhasebe"#android:label="Ön Muhasebe"#' $M
+          # Firestore için en az Android 6 (API 23)
+          for G in android/app/build.gradle.kts android/app/build.gradle; do
+            [ -f $G ] && sed -i -E 's#minSdk( =|Version)? *=? *flutter\.minSdkVersion#minSdk = maxOf(flutter.minSdkVersion, 23)#' $G && grep -n minSdk $G || true
+          done
           W=android/gradle/wrapper/gradle-wrapper.properties
           V=$(grep -oE 'gradle-[0-9.]+' $W | head -1)
           echo "Gerekli: $V"
@@ -57,7 +61,7 @@ jobs:
         run: |
           mkdir -p ~/.android
           if [ -n "$KS" ]; then echo "$KS" | base64 -d > ~/.android/debug.keystore
-          elif [ -f imza/debug.keystore ]; then cp imza/debug.keystore ~/.android/debug.keystore; fi
+          else cp imza/debug.keystore ~/.android/debug.keystore; fi
 
       - name: Maven aynası (GitHub indirme hatalarına karşı)
         run: |
@@ -92,7 +96,7 @@ jobs:
       - name: APK derle (indirme hatasına karşı 3 deneme)
         run: |
           for i in 1 2 3; do
-            flutter build apk --release && exit 0
+            flutter build apk --release --build-name=1.0.${{ github.run_number }} --build-number=${{ github.run_number }} && exit 0
             echo "Deneme $i başarısız, 30 sn sonra tekrar"; sleep 30
           done
           exit 1
