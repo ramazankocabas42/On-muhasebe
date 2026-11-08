@@ -41,7 +41,7 @@ class _HizliSatisState extends State<HizliSatis> {
     });
   }
 
-  double get toplam => sepet.fold(0.0, (a, s) => a + sy(s['miktar']) * sy(s['fiyat']) * (1 + sy(s['kdv']) / 100));
+  double get toplam => sepet.fold<double>(0.0, (a, s) => a + sy(s['miktar']) * sy(s['fiyat']) * (1 + sy(s['kdv']) / 100));
 
   Future<void> bitir(String sekil) async {
     if (sepet.isEmpty) return;

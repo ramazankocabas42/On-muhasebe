@@ -34,7 +34,7 @@ class _CariListeState extends State<CariListe> {
     final l = cariler
         .where((c) => n.isEmpty || normal('${c['unvan']} ${c['kod'] ?? ''} ${c['tel'] ?? ''}').contains(n))
         .toList();
-    final top = l.fold(0.0, (a, c) => a + sy(c['bakiye']));
+    final top = l.fold<double>(0.0, (a, c) => a + sy(c['bakiye']));
     return Scaffold(
       appBar: AppBar(title: Text(widget.sadeceBakiyeli ? 'Cari Bakiye Listesi' : 'Cari Hesap Listesi'), actions: [
         IconButton(
@@ -438,7 +438,7 @@ class _CokluIslemState extends State<CokluIslem> {
           if (satirlar.isNotEmpty)
             ListTile(
                 title: const Text('Toplam', style: TextStyle(fontWeight: FontWeight.bold)),
-                trailing: Text(para(satirlar.fold(0.0, (a, s) => a + (s['tutar'] as double))))),
+                trailing: Text(para(satirlar.fold<double>(0.0, (a, s) => a + (s['tutar'] as double))))),
           const Padding(padding: EdgeInsets.all(8), child: Text('Satırı silmek için uzun basın.', style: TextStyle(fontSize: 12))),
         ]),
       );

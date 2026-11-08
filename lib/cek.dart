@@ -86,7 +86,7 @@ class _CekListeState extends State<CekListe> {
   @override
   Widget build(BuildContext context) {
     final f = l.where((k) => !sadecePortfoy || k['durum'] == 'Portföyde').toList();
-    final toplam = f.where((k) => k['durum'] == 'Portföyde').fold(0.0, (a, k) => a + sy(k['tutar']));
+    final toplam = f.where((k) => k['durum'] == 'Portföyde').fold<double>(0.0, (a, k) => a + sy(k['tutar']));
     return Scaffold(
       appBar: AppBar(title: const Text('Çek ve Senetler')),
       floatingActionButton: FloatingActionButton(
@@ -217,11 +217,11 @@ class _OrtalamaVadeState extends State<OrtalamaVade> {
   @override
   Widget build(BuildContext context) {
     final s = l.where((k) => secili.contains(k['id'])).toList();
-    final toplam = s.fold(0.0, (a, k) => a + sy(k['tutar']));
+    final toplam = s.fold<double>(0.0, (a, k) => a + sy(k['tutar']));
     String sonuc = '-';
     if (toplam > 0) {
       final bugunD = DateTime.now();
-      final agirlik = s.fold(0.0, (a, k) => a + sy(k['tutar']) * (DateTime.tryParse('${k['vade']}') ?? bugunD).difference(bugunD).inDays);
+      final agirlik = s.fold<double>(0.0, (a, k) => a + sy(k['tutar']) * (DateTime.tryParse('${k['vade']}') ?? bugunD).difference(bugunD).inDays);
       final gun = (agirlik / toplam).round();
       sonuc = '${gTarih(tarihS(bugunD.add(Duration(days: gun))))}  ($gun gün)';
     }

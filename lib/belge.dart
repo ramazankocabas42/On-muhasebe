@@ -159,8 +159,8 @@ class _BelgeFormState extends State<BelgeForm> {
 
   bool get cariGerekli => t.cari != 0 || t.grup == 'Sipariş' || t.grup == 'İrsaliye';
 
-  double get araT => satirlar.fold(0.0, (a, s) => a + sy(s['miktar']) * sy(s['fiyat']) * (1 - sy(s['iskonto']) / 100));
-  double get kdvT => satirlar.fold(0.0, (a, s) => a + sy(s['miktar']) * sy(s['fiyat']) * (1 - sy(s['iskonto']) / 100) * sy(s['kdv']) / 100);
+  double get araT => satirlar.fold<double>(0.0, (a, s) => a + sy(s['miktar']) * sy(s['fiyat']) * (1 - sy(s['iskonto']) / 100));
+  double get kdvT => satirlar.fold<double>(0.0, (a, s) => a + sy(s['miktar']) * sy(s['fiyat']) * (1 - sy(s['iskonto']) / 100) * sy(s['kdv']) / 100);
 
   Future<void> urunEkle([Map<String, Object?>? u]) async {
     u ??= await urunSec(context);

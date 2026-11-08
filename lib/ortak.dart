@@ -343,7 +343,7 @@ class _RaporEkraniState extends State<RaporEkrani> {
     final liste = suzulmus;
     final toplamlar = <String, double>{};
     for (final k in widget.kolonlar.where((k) => k.para)) {
-      toplamlar[k.alan] = liste.fold(0.0, (a, r) => a + sy(r[k.alan]));
+      toplamlar[k.alan] = liste.fold<double>(0.0, (a, r) => a + sy(r[k.alan]));
     }
     return Scaffold(
       appBar: AppBar(title: Text(widget.baslik), actions: [
