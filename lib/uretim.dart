@@ -170,38 +170,63 @@ class _UretimEmirleriState extends State<UretimEmirleri> {
   }
 
   /// Hammaddeleri sarf fişiyle düşer, mamulü maliyetiyle stoğa alır.
+  bool _calisiyor = false;
+
+  /// Sarf ve üretimden giriş fişleri ile emrin durumu tek işlemde (transaction) yazılır:
+  /// "Üret"e iki kez basmak üretimi iki kez yapmaz, yarıda kesilirse hammadde düşüp mamul girmemiş kalmaz.
   Future<void> tamamla(Map<String, Object?> e) async {
-    final r = await DB.tek('SELECT * FROM recete WHERE id=?', [e['recete_id']]);
-    if (r == null) return;
-    final oran = sy(e['miktar']) / (sy(r['miktar']) == 0 ? 1 : sy(r['miktar']));
-    final kalemler = await DB.q('SELECT k.urun_id, k.miktar, u.ad, u.birim FROM recete_kalem k JOIN urun u ON u.id=k.urun_id WHERE recete_id=?', [r['id']]);
-    double maliyet = 0;
-    final sarf = <Map<String, Object?>>[];
-    for (final k in kalemler) {
-      final mk = sy(k['miktar']) * oran;
-      final f = await Servis.ortMaliyet(k['urun_id'] as int);
-      maliyet += mk * f;
-      sarf.add({'urun_id': k['urun_id'], 'miktar': mk, 'birim': k['birim'], 'fiyat': f, 'kdv': 0});
+    if (_calisiyor) return;
+    _calisiyor = true;
+    try {
+      final guncel = await DB.tek('SELECT durum FROM uretim_emri WHERE id=?', [e['id']]);
+      if (guncel?['durum'] != 'Bekliyor') return;
+      final r = await DB.tek('SELECT * FROM recete WHERE id=?', [e['recete_id']]);
+      if (r == null) return;
+      final oran = sy(e['miktar']) / (sy(r['miktar']) == 0 ? 1 : sy(r['miktar']));
+      final kalemler = await DB.q('SELECT k.urun_id, k.miktar, u.ad, u.birim FROM recete_kalem k JOIN urun u ON u.id=k.urun_id WHERE recete_id=?', [r['id']]);
+      double maliyet = 0;
+      final sarf = <Map<String, Object?>>[];
+      for (final k in kalemler) {
+        final mk = sy(k['miktar']) * oran;
+        final f = await Servis.ortMaliyet(k['urun_id'] as int);
+        maliyet += mk * f;
+        sarf.add({'urun_id': k['urun_id'], 'miktar': mk, 'birim': k['birim'], 'fiyat': f, 'kdv': 0});
+      }
+      final kaynak = 'uretim:${e['id']}';
+      // Numaralar işlem dışında alınır (işlem açıkken veritabanına dışarıdan sorgu kilitlenir)
+      final no1 = await Servis.sonrakiNo('sarf');
+      final no2 = await Servis.sonrakiNo('uretimden_giris');
+      final d = await DB.db;
+      await d.transaction((tx) async {
+        await Servis.belgeKaydet({'tur': 'sarf', 'no': no1, 'tarih': bugun(), 'depo_id': e['depo_id'], 'aciklama': 'Üretim emri #${e['id']}', 'kaynak': kaynak}, sarf, tx: tx);
+        await Servis.belgeKaydet({'tur': 'uretimden_giris', 'no': no2, 'tarih': bugun(), 'depo_id': e['depo_id'], 'aciklama': 'Üretim emri #${e['id']}', 'kaynak': kaynak}, [
+          {'urun_id': r['urun_id'], 'miktar': sy(e['miktar']), 'fiyat': sy(e['miktar']) == 0 ? 0 : maliyet / sy(e['miktar']), 'kdv': 0}
+        ], tx: tx);
+        await DB.upd(tx, 'uretim_emri', {'durum': 'Tamamlandı'}, where: 'id=?', whereArgs: [e['id']]);
+      });
+      if (mounted) mesaj(context, 'Üretim tamamlandı. Birim maliyet: ${para(sy(e['miktar']) == 0 ? 0 : maliyet / sy(e['miktar']))}');
+    } finally {
+      _calisiyor = false;
+      yukle();
     }
-    final kaynak = 'uretim:${e['id']}';
-    final s1 = await Servis.belgeKaydet({'tur': 'sarf', 'no': await Servis.sonrakiNo('sarf'), 'tarih': bugun(), 'depo_id': e['depo_id'], 'aciklama': 'Üretim emri #${e['id']}'}, sarf);
-    final s2 = await Servis.belgeKaydet({'tur': 'uretimden_giris', 'no': await Servis.sonrakiNo('uretimden_giris'), 'tarih': bugun(), 'depo_id': e['depo_id'], 'aciklama': 'Üretim emri #${e['id']}'}, [
-      {'urun_id': r['urun_id'], 'miktar': sy(e['miktar']), 'fiyat': sy(e['miktar']) == 0 ? 0 : maliyet / sy(e['miktar']), 'kdv': 0}
-    ]);
-    final d = await DB.db;
-    await DB.upd(d, 'belge', {'kaynak': kaynak}, where: 'id IN (?, ?)', whereArgs: [s1, s2]);
-    await DB.guncelle('uretim_emri', {'durum': 'Tamamlandı'}, e['id'] as int);
-    if (mounted) mesaj(context, 'Üretim tamamlandı. Birim maliyet: ${para(sy(e['miktar']) == 0 ? 0 : maliyet / sy(e['miktar']))}');
-    yukle();
   }
 
   Future<void> geriAl(Map<String, Object?> e) async {
-    final b = await DB.q('SELECT grup FROM belge WHERE kaynak=?', ['uretim:${e['id']}']);
-    for (final x in b) {
-      await DB.grupSil(x['grup'] as String);
+    if (_calisiyor) return;
+    _calisiyor = true;
+    try {
+      final b = await DB.q('SELECT DISTINCT grup FROM belge WHERE kaynak=? AND grup IS NOT NULL', ['uretim:${e['id']}']);
+      final d = await DB.db;
+      await d.transaction((tx) async {
+        for (final x in b) {
+          await DB.grupSilTx(tx, x['grup'] as String, belgeDahil: true);
+        }
+        await DB.upd(tx, 'uretim_emri', {'durum': 'Bekliyor'}, where: 'id=?', whereArgs: [e['id']]);
+      });
+    } finally {
+      _calisiyor = false;
+      yukle();
     }
-    await DB.guncelle('uretim_emri', {'durum': 'Bekliyor'}, e['id'] as int);
-    yukle();
   }
 
   @override

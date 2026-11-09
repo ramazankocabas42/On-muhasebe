@@ -139,7 +139,7 @@ class _BelgeFormState extends State<BelgeForm> {
       if (widget.onSatirlar != null) satirlar = widget.onSatirlar!.map((e) => Map<String, Object?>.from(e)).toList();
       if (widget.cariId != null) cari = await DB.tek('SELECT id, unvan ad FROM cari WHERE id=?', [widget.cariId]);
     }
-    setState(() => hazir = true);
+    if (mounted) setState(() => hazir = true);
   }
 
   Future<void> _doldur(Map<String, Object?> b) async {
@@ -225,21 +225,31 @@ class _BelgeFormState extends State<BelgeForm> {
     );
   }
 
+  bool _kaydediliyor = false;
+
   Future<void> kaydet() async {
+    // Kaydet'e (veya üstteki ✓'ye) iki kez basılınca belge iki kez oluşuyordu
+    if (_kaydediliyor) return;
     if (satirlar.isEmpty) return mesaj(context, 'En az bir satır ekleyin');
     if (t.cari != 0 && cari == null && !(t.kod.startsWith('hizli') && odeme != 'acik')) {
       return mesaj(context, 'Cari seçin');
     }
     if (odeme != 'acik' && hesap == null) return mesaj(context, 'Kasa/banka seçin');
     if (t.kod == 'depo_transfer' && hedefDepo == null) return mesaj(context, 'Hedef depoyu seçin');
-    await Servis.belgeKaydet({
-      'tur': t.kod, 'no': no.text.trim(), 'tarih': tarih, 'vade': vade, 'cari_id': cari?['id'], 'depo_id': depo?['id'],
-      'hedef_depo_id': hedefDepo?['id'], 'aciklama': aciklama.text.trim(), 'odeme': odeme,
-      'hesap_id': odeme == 'acik' ? null : hesap?['id'], 'stok_etkisiz': stokEtkisiz, 'durum': durum, 'kaynak_id': kaynakId,
-    }, satirlar, id: widget.id);
-    if (mounted) {
-      mesaj(context, '${t.ad} kaydedildi');
-      Navigator.pop(context, true);
+    if (t.kod == 'depo_transfer' && hedefDepo?['id'] == depo?['id']) return mesaj(context, 'Çıkış ve giriş deposu aynı olamaz');
+    setState(() => _kaydediliyor = true);
+    try {
+      await Servis.belgeKaydet({
+        'tur': t.kod, 'no': no.text.trim(), 'tarih': tarih, 'vade': vade, 'cari_id': cari?['id'], 'depo_id': depo?['id'],
+        'hedef_depo_id': hedefDepo?['id'], 'aciklama': aciklama.text.trim(), 'odeme': odeme,
+        'hesap_id': odeme == 'acik' ? null : hesap?['id'], 'stok_etkisiz': stokEtkisiz, 'durum': durum, 'kaynak_id': kaynakId,
+      }, satirlar, id: widget.id);
+      if (mounted) {
+        mesaj(context, '${t.ad} kaydedildi');
+        Navigator.pop(context, true);
+      }
+    } finally {
+      if (mounted) setState(() => _kaydediliyor = false);
     }
   }
 
@@ -254,6 +264,14 @@ class _BelgeFormState extends State<BelgeForm> {
       if (turlar[k] != null) hedefler.add(turlar[k]!);
     }
     if (hedefler.isEmpty) return;
+    // Aynı irsaliye/sipariş ikinci kez faturalanırsa cari iki kez borçlanır
+    final onceki = await DB.q('SELECT no, tur FROM belge WHERE kaynak_id=?', [widget.id]);
+    if (!mounted) return;
+    if (onceki.isNotEmpty) {
+      final liste = onceki.map((x) => '${turlar[x['tur']]?.ad ?? x['tur']} ${x['no'] ?? ''}').join(', ');
+      if (!await onay(context, 'Bu belgeden daha önce oluşturulmuş: $liste\n\nYine de yeni belge oluşturulsun mu?')) return;
+      if (!mounted) return;
+    }
     final h = await showModalBottomSheet<BT>(
         context: context,
         builder: (_) => ListView(shrinkWrap: true, children: hedefler.map((x) => ListTile(leading: const Icon(Icons.transform), title: Text('${x.ad} oluştur'), onTap: () => Navigator.pop(context, x))).toList()));
@@ -281,6 +299,14 @@ class _BelgeFormState extends State<BelgeForm> {
           IconButton(
               icon: const Icon(Icons.delete_outline),
               onPressed: () async {
+                // İrsaliyeden oluşturulan fatura stoku tekrar etkilemez; irsaliye silinirse o mallar stoktan hiç düşmemiş olur.
+                if (t.grup == 'İrsaliye') {
+                  final f = await DB.q('SELECT no FROM belge WHERE kaynak_id=? AND stok_etkisiz=1', [widget.id]);
+                  if (!context.mounted) return;
+                  if (f.isNotEmpty) {
+                    return mesaj(context, 'Bu irsaliyeden fatura oluşturulmuş (${f.map((x) => x['no']).join(', ')}). Stok bu irsaliyeden işlendiği için önce faturayı silin.');
+                  }
+                }
                 if (!await onay(context, 'Belge ve bağlı tüm hareketler silinsin mi?')) return;
                 final b = await DB.tek('SELECT grup FROM belge WHERE id=?', [widget.id]);
                 final g = b?['grup'] as String?;

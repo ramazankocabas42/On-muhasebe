@@ -235,9 +235,12 @@ class _CariFormState extends State<CariForm> {
             IconButton(
                 icon: const Icon(Icons.delete_outline),
                 onPressed: () async {
-                  final n = await DB.tek('SELECT COUNT(*) n FROM cari_hareket WHERE cari_id=?', [widget.id]);
+                  // Sipariş/irsaliye (cari hareketi oluşturmaz) ve çek/senet kayıtları da cariye bağlıdır
+                  final n = await DB.tek('''SELECT (SELECT COUNT(*) FROM cari_hareket WHERE cari_id=?)
+                      + (SELECT COUNT(*) FROM belge WHERE cari_id=?) + (SELECT COUNT(*) FROM cek_senet WHERE cari_id=?)
+                      + (SELECT COUNT(*) FROM finans_hareket WHERE cari_id=?) n''', [widget.id, widget.id, widget.id, widget.id]);
                   if (!context.mounted) return;
-                  if ((n?['n'] as int? ?? 0) > 0) return mesaj(context, 'Hareketi olan cari silinemez.');
+                  if ((n?['n'] as int? ?? 0) > 0) return mesaj(context, 'Hareketi, belgesi veya çek/senedi olan cari silinemez.');
                   if (await onay(context, 'Cari silinsin mi?')) {
                     await DB.sil('cari', widget.id!);
                     if (context.mounted) Navigator.pop(context);
@@ -292,25 +295,35 @@ class _IslemFormState extends State<IslemForm> {
     }
   }
 
+  bool _kaydediliyor = false;
+
   Future<void> kaydet() async {
+    if (_kaydediliyor) return; // çift dokunuşta işlem iki kez kaydediliyordu
     final tt = sy(tutar.text);
     if (tt <= 0) return mesaj(context, 'Tutar girin');
     if (t.hesap != 0 && hesap == null) return mesaj(context, 'Hesap seçin');
     if (t.karsi != 0 && karsiHesap == null) return mesaj(context, '2. hesabı seçin');
     if (t.cari != 0 && cari == null) return mesaj(context, 'Cari seçin');
     if (t.karsiCari != 0 && karsiCari == null) return mesaj(context, '2. cariyi seçin');
-    await Servis.islemKaydet(widget.kod,
-        hesap: hesap?['id'] as int?,
-        karsiHesap: karsiHesap?['id'] as int?,
-        cari: cari?['id'] as int?,
-        karsiCari: karsiCari?['id'] as int?,
-        tarih: tarih,
-        tutar: tt,
-        aciklama: aciklama.text.trim(),
-        kategori: kategori.text.trim().isEmpty ? null : kategori.text.trim());
-    if (mounted) {
-      mesaj(context, '${t.ad} kaydedildi');
-      Navigator.pop(context);
+    if (t.karsi != 0 && hesap?['id'] == karsiHesap?['id']) return mesaj(context, 'İki hesap aynı olamaz');
+    if (t.karsiCari != 0 && cari?['id'] == karsiCari?['id']) return mesaj(context, 'İki cari aynı olamaz');
+    _kaydediliyor = true;
+    try {
+      await Servis.islemKaydet(widget.kod,
+          hesap: hesap?['id'] as int?,
+          karsiHesap: karsiHesap?['id'] as int?,
+          cari: cari?['id'] as int?,
+          karsiCari: karsiCari?['id'] as int?,
+          tarih: tarih,
+          tutar: tt,
+          aciklama: aciklama.text.trim(),
+          kategori: kategori.text.trim().isEmpty ? null : kategori.text.trim());
+      if (mounted) {
+        mesaj(context, '${t.ad} kaydedildi');
+        Navigator.pop(context);
+      }
+    } finally {
+      _kaydediliyor = false;
     }
   }
 
@@ -396,20 +409,27 @@ class _CokluIslemState extends State<CokluIslem> {
     }
   }
 
+  bool _kaydediliyor = false;
+
   Future<void> kaydet() async {
-    if (satirlar.isEmpty) return;
+    if (satirlar.isEmpty || _kaydediliyor) return;
     if (widget.odemeTahsilat && hesap == null) return mesaj(context, 'Kasa/banka seçin');
-    final d = await DB.db;
-    await d.transaction((tx) async {
-      for (final s in satirlar) {
-        await Servis.islemKaydet(s['kod'] as String,
-            cari: s['cari'] as int, hesap: hesap?['id'] as int?, tarih: tarih, tutar: s['tutar'] as double,
-            aciklama: s['aciklama'] as String?, tx: tx);
+    _kaydediliyor = true;
+    try {
+      final d = await DB.db;
+      await d.transaction((tx) async {
+        for (final s in satirlar) {
+          await Servis.islemKaydet(s['kod'] as String,
+              cari: s['cari'] as int, hesap: hesap?['id'] as int?, tarih: tarih, tutar: s['tutar'] as double,
+              aciklama: s['aciklama'] as String?, tx: tx);
+        }
+      });
+      if (mounted) {
+        mesaj(context, '${satirlar.length} işlem kaydedildi');
+        Navigator.pop(context);
       }
-    });
-    if (mounted) {
-      mesaj(context, '${satirlar.length} işlem kaydedildi');
-      Navigator.pop(context);
+    } finally {
+      _kaydediliyor = false;
     }
   }
 
