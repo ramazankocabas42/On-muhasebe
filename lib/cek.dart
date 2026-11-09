@@ -142,23 +142,31 @@ class _CekFormState extends State<CekForm> {
   Map<String, Object?>? cari;
   final no = TextEditingController(), banka = TextEditingController(), tutar = TextEditingController(), aciklama = TextEditingController();
 
+  bool _kaydediliyor = false;
+
   Future<void> kaydet() async {
     final t = sy(tutar.text);
     if (cari == null || t <= 0) return mesaj(context, 'Cari ve tutar zorunlu');
-    final g = DB.yeniGrup();
-    final d = await DB.db;
-    await d.transaction((tx) async {
-      await DB.ins(tx, 'cek_senet', {
-        'tur': tur, 'yon': yon, 'no': no.text.trim(), 'cari_id': cari!['id'], 'banka': banka.text.trim(), 'tarih': tarih,
-        'vade': vade, 'tutar': t, 'aciklama': aciklama.text.trim(), 'grup': g,
+    if (_kaydediliyor) return; // çift dokunuşta çek iki kez giriliyordu
+    _kaydediliyor = true;
+    try {
+      final g = DB.yeniGrup();
+      final d = await DB.db;
+      await d.transaction((tx) async {
+        await DB.ins(tx, 'cek_senet', {
+          'tur': tur, 'yon': yon, 'no': no.text.trim(), 'cari_id': cari!['id'], 'banka': banka.text.trim(), 'tarih': tarih,
+          'vade': vade, 'tutar': t, 'aciklama': aciklama.text.trim(), 'grup': g,
+        });
+        // Alınan çek: müşterinin borcu kapanır (alacak). Verilen çek: tedarikçiye borcumuz kapanır (borç).
+        await DB.ins(tx, 'cari_hareket', {
+          'cari_id': cari!['id'], 'tarih': tarih, 'tur': '${yon == 'Alınan' ? 'Alınan' : 'Verilen'} $tur',
+          'aciklama': '$tur ${no.text} vade ${gTarih(vade)}', 'borc': yon == 'Verilen' ? t : 0, 'alacak': yon == 'Alınan' ? t : 0, 'grup': g,
+        });
       });
-      // Alınan çek: müşterinin borcu kapanır (alacak). Verilen çek: tedarikçiye borcumuz kapanır (borç).
-      await DB.ins(tx, 'cari_hareket', {
-        'cari_id': cari!['id'], 'tarih': tarih, 'tur': '${yon == 'Alınan' ? 'Alınan' : 'Verilen'} $tur',
-        'aciklama': '$tur ${no.text} vade ${gTarih(vade)}', 'borc': yon == 'Verilen' ? t : 0, 'alacak': yon == 'Alınan' ? t : 0, 'grup': g,
-      });
-    });
-    if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.pop(context);
+    } finally {
+      _kaydediliyor = false;
+    }
   }
 
   @override

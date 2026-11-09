@@ -14,20 +14,53 @@ class HizliSatis extends StatefulWidget {
 
 class _HizliSatisState extends State<HizliSatis> {
   final ara = TextEditingController();
+  final odak = FocusNode();
   List<Map<String, Object?>> sonuc = [];
   final sepet = <Map<String, Object?>>[];
+  int _aramaNo = 0;
+  bool _kaydediliyor = false;
 
+  @override
+  void dispose() {
+    ara.dispose();
+    odak.dispose();
+    super.dispose();
+  }
+
+  /// Yazarken sadece listeler; sepete eklemez. (Önceden yazılan her harfte barkod/kod tam eşleşmesi
+  /// aranıyordu: kodu "AB" olan ürün, "AB123" yazılırken sepete giriyor, okuyucu Enter'ı da
+  /// gönderince aynı ürün iki kez ekleniyordu.)
+  Future<void> listele(String v) async {
+    final n = v.trim();
+    final no = ++_aramaNo;
+    if (n.length < 2) {
+      if (sonuc.isNotEmpty) setState(() => sonuc = []);
+      return;
+    }
+    final r = await DB.q('SELECT * FROM urun WHERE ad LIKE ? OR kod LIKE ? OR barkod LIKE ? ORDER BY ad LIMIT 30', ['%$n%', '%$n%', '%$n%']);
+    if (!mounted || no != _aramaNo) return; // daha yeni bir arama başladıysa eski sonucu gösterme
+    setState(() => sonuc = r);
+  }
+
+  /// Enter / barkod okuyucu: tam eşleşen ürünü sepete ekler, yoksa listeler.
   Future<void> bul(String v) async {
     final n = v.trim();
+    final no = ++_aramaNo;
     if (n.isEmpty) return setState(() => sonuc = []);
     final tam = await DB.tek('SELECT * FROM urun WHERE barkod=? OR kod=? LIMIT 1', [n, n]);
+    if (!mounted) return;
     if (tam != null) {
       ekle(tam);
       ara.clear();
-      return setState(() => sonuc = []);
+      setState(() => sonuc = []);
+      odak.requestFocus(); // sıradaki barkod için alan hazır kalsın
+      return;
     }
-    final r = await DB.q('SELECT * FROM urun WHERE ad LIKE ? OR kod LIKE ? ORDER BY ad LIMIT 30', ['%$n%', '%$n%']);
+    final r = await DB.q('SELECT * FROM urun WHERE ad LIKE ? OR kod LIKE ? OR barkod LIKE ? ORDER BY ad LIMIT 30', ['%$n%', '%$n%', '%$n%']);
+    if (!mounted || no != _aramaNo) return;
     setState(() => sonuc = r);
+    if (r.isEmpty) mesaj(context, 'Ürün bulunamadı: $n');
+    odak.requestFocus();
   }
 
   void ekle(Map<String, Object?> u) {
@@ -44,23 +77,31 @@ class _HizliSatisState extends State<HizliSatis> {
   double get toplam => sepet.fold<double>(0.0, (a, s) => a + sy(s['miktar']) * sy(s['fiyat']) * (1 + sy(s['kdv']) / 100));
 
   Future<void> bitir(String sekil) async {
-    if (sepet.isEmpty) return;
-    Map<String, Object?>? cari;
-    int? hesap;
-    if (sekil == 'veresiye') {
-      cari = await cariSec(context);
-      if (cari == null) return;
-    } else {
-      hesap = await Servis.ilkHesap(sekil == 'nakit' ? 'kasa' : 'banka');
+    // Düğmeye hızlı iki kez basılınca satış iki kez kaydediliyordu
+    if (sepet.isEmpty || _kaydediliyor) return;
+    _kaydediliyor = true;
+    try {
+      Map<String, Object?>? cari;
+      int? hesap;
+      if (sekil == 'veresiye') {
+        cari = await cariSec(context);
+        if (cari == null) return;
+      } else {
+        hesap = await Servis.ilkHesap(sekil == 'nakit' ? 'kasa' : 'banka');
+      }
+      final tur = widget.iade ? 'hizli_satis_iade' : 'hizli_satis';
+      final tutar = toplam;
+      await Servis.belgeKaydet({
+        'tur': tur, 'no': await Servis.sonrakiNo(tur), 'tarih': bugun(), 'depo_id': 1, 'cari_id': cari?['id'],
+        'odeme': sekil == 'veresiye' ? 'acik' : 'pesin', 'hesap_id': hesap, 'aciklama': sekil == 'kart' ? 'Kredi kartı' : sekil == 'nakit' ? 'Nakit' : 'Veresiye',
+      }, sepet);
+      if (!mounted) return;
+      mesaj(context, '${widget.iade ? 'İade' : 'Satış'} tamamlandı: ${para(tutar)}');
+      setState(() => sepet.clear());
+      odak.requestFocus();
+    } finally {
+      _kaydediliyor = false;
     }
-    final tur = widget.iade ? 'hizli_satis_iade' : 'hizli_satis';
-    await Servis.belgeKaydet({
-      'tur': tur, 'no': await Servis.sonrakiNo(tur), 'tarih': bugun(), 'depo_id': 1, 'cari_id': cari?['id'],
-      'odeme': sekil == 'veresiye' ? 'acik' : 'pesin', 'hesap_id': hesap, 'aciklama': sekil == 'kart' ? 'Kredi kartı' : sekil == 'nakit' ? 'Nakit' : 'Veresiye',
-    }, sepet);
-    if (!mounted) return;
-    mesaj(context, '${widget.iade ? 'İade' : 'Satış'} tamamlandı: ${para(toplam)}');
-    setState(() => sepet.clear());
   }
 
   @override
@@ -73,9 +114,10 @@ class _HizliSatisState extends State<HizliSatis> {
             padding: const EdgeInsets.all(8),
             child: TextField(
               controller: ara,
+              focusNode: odak,
               autofocus: true,
               decoration: const InputDecoration(prefixIcon: Icon(Icons.qr_code_scanner), hintText: 'Barkod okut veya ürün adı yaz'),
-              onChanged: (v) => v.length >= 2 ? bul(v) : null,
+              onChanged: listele,
               onSubmitted: bul,
             ),
           ),

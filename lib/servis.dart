@@ -162,17 +162,47 @@ class Servis {
     return g;
   }
 
+  /// Baş harflerden üretilen ön ekler bazı türlerde çakışıyordu (ör. Satış Faturası ve Satış Fişi ikisi de "SF",
+  /// Sayım Fazlası da "SF" idi). Bu türlere ayrı ön ek verilir.
+  static const _ozelOnEk = {
+    'alis_fis': 'AFS',
+    'satis_fis': 'SFS',
+    'alis_iade_fis': 'AIFS',
+    'satis_iade_fis': 'SIFS',
+    'sayim_fazlasi': 'SYF',
+    'sayim_eksigi': 'SYE',
+    'stok_acilis': 'STA',
+  };
+
+  static String onEk(String tur) => _ozelOnEk[tur] ?? tur.split('_').map((e) => e.isEmpty ? '' : e[0]).join().toUpperCase();
+
+  /// Sıradaki belge numarası. Kayıt sayısına göre değil, bu türdeki en büyük numaraya göre verilir;
+  /// böylece belge silindiğinde aynı numara ikinci kez çıkmaz.
   static Future<String> sonrakiNo(String tur) async {
-    final on = tur.split('_').map((e) => e.isEmpty ? '' : e[0]).join().toUpperCase();
-    final r = await DB.tek('SELECT COUNT(*) n FROM belge WHERE tur=?', [tur]);
-    final n = ((r?['n'] as int?) ?? 0) + 1;
-    return '$on${n.toString().padLeft(6, '0')}';
+    final on = onEk(tur);
+    final r = await DB.q('SELECT no FROM belge WHERE tur=? AND no LIKE ?', [tur, '$on%']);
+    var enBuyuk = 0;
+    final re = RegExp('^${RegExp.escape(on)}(\\d+)\$');
+    for (final x in r) {
+      final m = re.firstMatch('${x['no'] ?? ''}'.trim());
+      final n = m == null ? null : int.tryParse(m[1]!);
+      if (n != null && n > enBuyuk) enBuyuk = n;
+    }
+    return '$on${(enBuyuk + 1).toString().padLeft(6, '0')}';
   }
 
   /// Belgeyi kaydeder; stok, cari ve (peşin ise) kasa/banka hareketlerini oluşturur.
-  static Future<int> belgeKaydet(Map<String, Object?> b, List<Map<String, Object?>> satirlar, {int? id}) async {
+  /// [tx] verilirse o işlemin (transaction) içinde çalışır; böylece birden çok belge tek seferde kaydedilebilir.
+  static Future<int> belgeKaydet(Map<String, Object?> b, List<Map<String, Object?>> satirlar,
+      {int? id, DatabaseExecutor? tx}) async {
+    if (tx != null) return _belgeKaydet(tx, b, satirlar, id);
     final d = await DB.db;
-    return d.transaction((tx) async {
+    return d.transaction((x) => _belgeKaydet(x, b, satirlar, id));
+  }
+
+  static Future<int> _belgeKaydet(
+      DatabaseExecutor tx, Map<String, Object?> b, List<Map<String, Object?>> satirlar, int? id) async {
+    {
       final t = turlar[b['tur']]!;
       String grup;
       if (id != null) {
@@ -259,7 +289,7 @@ class Servis {
         await DB.upd(tx, 'belge', {'durum': 'Kapandı'}, where: 'id=?', whereArgs: [kaynakId]);
       }
       return bid;
-    });
+    }
   }
 
   static Future<double> ortMaliyet(int urunId) async {
